@@ -1,17 +1,68 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from 'react-query';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "@/components/ui/input";
-import { fetchValidatorData, stakeTokens, unstakeTokens } from '../api/stakeManagement';
+import { Input } from "../components/ui/input";
+import { Alert, AlertDescription } from "../components/ui/alert";
 
-const StakeForm = () => {
+interface Validator {
+  address: string;
+  stake: number;
+  performance: number;
+}
+
+// Placeholder functions for API calls
+const fetchValidatorData = async (): Promise<Validator[]> => {
+  // This should be replaced with actual API call
+  return [
+    { address: '0x123...', stake: 100, performance: 0.95 },
+    { address: '0x456...', stake: 200, performance: 0.98 },
+  ];
+};
+
+const stakeTokens = async (amount: string): Promise<void> => {
+  // This should be replaced with actual API call
+  console.log(`Staking ${amount} tokens`);
+};
+
+const unstakeTokens = async (amount: string): Promise<void> => {
+  // This should be replaced with actual API call
+  console.log(`Unstaking ${amount} tokens`);
+};
+
+const StakeForm: React.FC = () => {
   const [amount, setAmount] = useState('');
-  const stakeMutation = useMutation(stakeTokens);
-  const unstakeMutation = useMutation(unstakeTokens);
+  const queryClient = useQueryClient();
 
-  const handleStake = () => stakeMutation.mutate(amount);
-  const handleUnstake = () => unstakeMutation.mutate(amount);
+  const stakeMutation = useMutation(stakeTokens, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('validators');
+      setAmount('');
+    },
+  });
+
+  const unstakeMutation = useMutation(unstakeTokens, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('validators');
+      setAmount('');
+    },
+  });
+
+  const handleStake = () => {
+    if (!amount || isNaN(Number(amount))) {
+      alert('Please enter a valid amount');
+      return;
+    }
+    stakeMutation.mutate(amount);
+  };
+
+  const handleUnstake = () => {
+    if (!amount || isNaN(Number(amount))) {
+      alert('Please enter a valid amount');
+      return;
+    }
+    unstakeMutation.mutate(amount);
+  };
 
   return (
     <Card>
@@ -22,23 +73,34 @@ const StakeForm = () => {
         <Input
           type="number"
           value={amount}
-          onChange={(e: { target: { value: React.SetStateAction<string>; }; }) => setAmount(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
           placeholder="Amount to stake/unstake"
         />
         <div className="mt-4 space-x-2">
-          <Button onClick={handleStake}>Stake</Button>
-          <Button onClick={handleUnstake} variant="outline">Unstake</Button>
+          <Button onClick={handleStake} disabled={stakeMutation.isLoading}>
+            {stakeMutation.isLoading ? 'Staking...' : 'Stake'}
+          </Button>
+          <Button onClick={handleUnstake} variant="outline" disabled={unstakeMutation.isLoading}>
+            {unstakeMutation.isLoading ? 'Unstaking...' : 'Unstake'}
+          </Button>
         </div>
+        {(stakeMutation.isError || unstakeMutation.isError) && (
+          <Alert variant="destructive" className="mt-4">
+            <AlertDescription>
+              An error occurred while processing your request.
+            </AlertDescription>
+          </Alert>
+        )}
       </CardContent>
     </Card>
   );
 };
 
-const ValidatorList = () => {
-  const { data, isLoading, error } = useQuery('validators', fetchValidatorData);
+const ValidatorList: React.FC = () => {
+  const { data, isLoading, error } = useQuery<Validator[], Error>('validators', fetchValidatorData);
 
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error fetching validator data</div>;
+  if (isLoading) return <div>Loading validators...</div>;
+  if (error) return <Alert variant="destructive"><AlertDescription>Error fetching validator data</AlertDescription></Alert>;
 
   return (
     <Card>
@@ -46,19 +108,27 @@ const ValidatorList = () => {
         <CardTitle>Validators</CardTitle>
       </CardHeader>
       <CardContent>
-        <ul>
-          {data.map((validator: { address: string; stake: number; performance: number; }) => (
-            <li key={validator.address}>
-              {validator.address} - Stake: {validator.stake} - Performance: {validator.performance.toFixed(2)}
-            </li>
-          ))}
-        </ul>
+        {data && data.length > 0 ? (
+          <ul>
+            {data.map((validator) => (
+              <li key={validator.address} className="mb-2">
+                <strong>{validator.address}</strong>
+                <br />
+                Stake: {validator.stake.toFixed(2)}
+                <br />
+                Performance: {validator.performance.toFixed(2)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No validators found.</p>
+        )}
       </CardContent>
     </Card>
   );
 };
 
-const StakeManagement = () => {
+const StakeManagement: React.FC = () => {
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Stake Management</h1>
