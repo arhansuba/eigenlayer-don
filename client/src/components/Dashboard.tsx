@@ -1,11 +1,12 @@
+import { Card } from 'antd';
 import React from 'react';
 import { useQuery } from 'react-query';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { fetchDataFeed } from '../api/dataFeed';
+import { CardHeader, CardTitle, CardContent } from './ui/card';
+
 
 const DataFeedChart = () => {
-  const { data, isLoading, error } = useQuery('dataFeed', fetchDataFeed, {
+  const { data, isLoading, error } = useQuery<{ timestamp: string; value: number }[]>('dataFeed', fetchDataFeed, {
     refetchInterval: 5000, // Refetch every 5 seconds
   });
 
@@ -32,7 +33,7 @@ const DataFeedChart = () => {
 };
 
 const DataSourceList = () => {
-  const { data, isLoading, error } = useQuery('dataSources', fetchDataSources);
+  const { data, isLoading, error } = useQuery<{ id: React.Key | null | undefined; name: string; reliability: number }[]>('dataSources', fetchDataSources);
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error fetching data sources</div>;
@@ -44,7 +45,7 @@ const DataSourceList = () => {
       </CardHeader>
       <CardContent>
         <ul>
-          {data.map((source) => (
+          {data && data.map((source: { id: React.Key | null | undefined; name: string | number | boolean | React.ReactElement<any, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | null | undefined; reliability: number; }) => (
             <li key={source.id}>
               {source.name} - Reliability: {source.reliability.toFixed(2)}
             </li>
@@ -67,4 +68,20 @@ const Dashboard = () => {
   );
 };
 
+async function fetchDataSources(): Promise<{ id: React.Key | null | undefined; name: string; reliability: number }[]> {
+  const response = await fetch('/api/data-sources');
+  if (!response.ok) {
+    throw new Error('Network response was not ok');
+  }
+  return response.json();
+}
+
 export default Dashboard;
+
+async function fetchDataFeed(): Promise<{ timestamp: string; value: number }[]> {
+  const response = await fetch('/api/data-feed');
+  if (!response.ok) {
+    throw new Error('Network response was not ok');
+  }
+  return response.json();
+}

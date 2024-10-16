@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Alert, AlertDescription } from "../components/ui/alert";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
+import { Button } from "./ui/button";
+
+import { Alert, AlertDescription } from "./ui/alert";
+import { Input } from 'antd';
 
 interface Validator {
   address: string;
@@ -80,7 +81,7 @@ const StakeForm: React.FC = () => {
           <Button onClick={handleStake} disabled={stakeMutation.isLoading}>
             {stakeMutation.isLoading ? 'Staking...' : 'Stake'}
           </Button>
-          <Button onClick={handleUnstake} variant="outline" disabled={unstakeMutation.isLoading}>
+          <Button onClick={handleUnstake} disabled={unstakeMutation.isLoading}>
             {unstakeMutation.isLoading ? 'Unstaking...' : 'Unstake'}
           </Button>
         </div>

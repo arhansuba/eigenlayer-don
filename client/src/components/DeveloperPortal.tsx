@@ -1,12 +1,13 @@
+import { Card, Button } from 'antd';
+import { Input } from 'antd';
 import React, { useState } from 'react';
 import { useQuery, useMutation } from 'react-query';
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { fetchAPIDocumentation, generateAPIKey } from '../api/developerAPI';
+import { CardHeader, CardTitle, CardContent } from './ui/card';
+import { SetStateAction } from 'react';
+
 
 const APIDocumentation = () => {
-  const { data, isLoading, error } = useQuery('apiDocs', fetchAPIDocumentation);
+  const { data, isLoading, error } = useQuery('apiDocs', APIDocumentation);
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error fetching API documentation</div>;
@@ -17,7 +18,7 @@ const APIDocumentation = () => {
         <CardTitle>API Documentation</CardTitle>
       </CardHeader>
       <CardContent>
-        <div dangerouslySetInnerHTML={{ __html: data }} />
+        <div dangerouslySetInnerHTML={{ __html: typeof data === 'string' ? data : '' }} />
       </CardContent>
     </Card>
   );
@@ -85,3 +86,7 @@ const DeveloperPortal = () => {
 };
 
 export default DeveloperPortal;
+
+function generateAPIKey(variables: void): Promise<{ apiKey: SetStateAction<string>; }> {
+  throw new Error('Function not implemented.');
+}
