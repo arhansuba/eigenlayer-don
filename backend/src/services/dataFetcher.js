@@ -1,86 +1,182 @@
 const axios = require('axios');
+const NodeCache = require('node-cache');
+const Joi = require('joi');
+const { mean, standardDeviation } = require('simple-statistics');
 
-/**
- * Function to fetch data from a specified API URL
- * @param {string} apiUrl - The URL of the API endpoint
- * @param {object} options - Additional options (e.g., pagination, caching)
- * @returns {Promise<object|null>} - Resolves with fetched data or null on error
- */
-async function fetchData(apiUrl, options = {}) {
-  const { maxRetries = 3, retryDelay = 1000, useCache = false } = options;
-  let retries = 0;
+// Initialize cache
+const cache = new NodeCache({ stdTTL: 300, checkperiod: 120 });
 
-  try {
-    let response;
-    
-    // Implement caching logic if enabled
+class DataSource {
+  constructor(name, url, schema, parseFunction) {
+    this.name = name;
+    this.url = url;
+    this.schema = schema;
+    this.parseFunction = parseFunction;
+    this.reliability = 1.0;
+    this.successfulFetches = 0;
+    this.totalFetches = 0;
+  }
+
+  updateReliability() {
+    this.reliability = this.successfulFetches / this.totalFetches;
+  }
+}
+
+class DataFetcher {
+  constructor() {
+    this.dataSources = {};
+  }
+
+  addDataSource(name, url, schema, parseFunction) {
+    this.dataSources[name] = new DataSource(name, url, schema, parseFunction);
+  }
+
+  async fetchData(sourceName, options = {}) {
+    const {
+      maxRetries = 3,
+      retryDelay = 1000,
+      useCache = true,
+      cacheTTL = 300
+    } = options;
+
+    const source = this.dataSources[sourceName];
+    if (!source) {
+      throw new Error(`Data source ${sourceName} not found`);
+    }
+
+    const cacheKey = `${sourceName}:${source.url}`;
+
     if (useCache) {
-      const cachedData = fetchFromCache(apiUrl);
+      const cachedData = cache.get(cacheKey);
       if (cachedData) {
-        console.log("Using cached data for", apiUrl);
+        console.log(`Using cached data for ${sourceName}`);
         return cachedData;
       }
     }
 
-    // Retry logic with exponential backoff
-    do {
+    let retries = 0;
+    source.totalFetches++;
+
+    while (retries < maxRetries) {
       try {
-        response = await axios.get(apiUrl);
-        break; // Exit loop on successful response
+        const response = await axios.get(source.url);
+        const parsedData = source.parseFunction(response.data);
+        
+        const { error, value } = source.schema.validate(parsedData);
+        if (error) {
+          throw new Error(`Data validation failed: ${error.message}`);
+        }
+
+        const sanitizedData = this.sanitizeData(value);
+        const normalizedData = this.normalizeData(sanitizedData);
+
+        source.successfulFetches++;
+        source.updateReliability();
+
+        if (useCache) {
+          cache.set(cacheKey, normalizedData, cacheTTL);
+        }
+
+        return normalizedData;
       } catch (error) {
-        console.error(`Error fetching data from ${apiUrl}:`, error.message);
+        console.error(`Error fetching data from ${sourceName}:`, error.message);
         retries++;
-        await wait(retryDelay * retries); // Exponential backoff
+        await this.wait(retryDelay * retries);
       }
-    } while (retries < maxRetries);
-
-    if (!response) {
-      console.error(`Failed to fetch data from ${apiUrl} after ${maxRetries} retries`);
-      return null;
     }
 
-    // Cache fetched data if enabled
-    if (useCache) {
-      cacheData(apiUrl, response.data);
-    }
-
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching data:", error);
+    console.error(`Failed to fetch data from ${sourceName} after ${maxRetries} retries`);
+    source.updateReliability();
     return null;
+  }
+
+  async fetchAllData(options = {}) {
+    const results = {};
+    for (const [name, source] of Object.entries(this.dataSources)) {
+      results[name] = await this.fetchData(name, options);
+    }
+    return results;
+  }
+
+  getSourceReliability(sourceName) {
+    const source = this.dataSources[sourceName];
+    if (!source) {
+      throw new Error(`Data source ${sourceName} not found`);
+    }
+    return source.reliability;
+  }
+
+  sanitizeData(data) {
+    // Implement data sanitization logic here
+    // This is a simple example; expand based on your specific needs
+    if (typeof data === 'object' && data !== null) {
+      Object.keys(data).forEach(key => {
+        if (typeof data[key] === 'string') {
+          data[key] = data[key].trim();
+        }
+      });
+    }
+    return data;
+  }
+
+  normalizeData(data) {
+    // Implement data normalization logic here
+    // This is a simple example; expand based on your specific needs
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
+      const avg = mean(data);
+      const stdDev = standardDeviation(data);
+      return data.map(value => (value - avg) / stdDev);
+    }
+    return data;
+  }
+
+  wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 
-/**
- * Function to simulate a wait or delay using setTimeout
- * @param {number} ms - The delay in milliseconds
- * @returns {Promise<void>}
- */
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// Example usage
+const dataFetcher = new DataFetcher();
+
+// Add data sources
+dataFetcher.addDataSource(
+  'cryptoPrice',
+  'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+  Joi.object({
+    ethereum: Joi.object({
+      usd: Joi.number().positive().required()
+    }).required()
+  }),
+  (data) => data.ethereum.usd
+);
+
+dataFetcher.addDataSource(
+  'weatherData',
+  'https://api.openweathermap.org/data/2.5/weather?q=London&appid=YOUR_API_KEY',
+  Joi.object({
+    main: Joi.object({
+      temp: Joi.number().required()
+    }).required()
+  }),
+  (data) => data.main.temp
+);
+
+async function fetchAndProcessData() {
+  try {
+    const allData = await dataFetcher.fetchAllData();
+    console.log('Fetched data:', allData);
+
+    const cryptoReliability = dataFetcher.getSourceReliability('cryptoPrice');
+    const weatherReliability = dataFetcher.getSourceReliability('weatherData');
+
+    console.log('Data source reliability:');
+    console.log('Crypto Price:', cryptoReliability);
+    console.log('Weather Data:', weatherReliability);
+
+    return allData;
+  } catch (error) {
+    console.error('Error fetching and processing data:', error);
+  }
 }
 
-/**
- * Placeholder function for caching fetched data
- * @param {string} key - Cache key (e.g., API URL)
- * @param {object} data - Data to be cached
- */
-function cacheData(key, data) {
-  // Implement caching mechanism (e.g., using Redis, localStorage)
-  console.log("Caching data for", key);
-  // Example: localStorage.setItem(key, JSON.stringify(data));
-}
-
-/**
- * Placeholder function for fetching cached data
- * @param {string} key - Cache key (e.g., API URL)
- * @returns {object|null} - Cached data or null if not found
- */
-function fetchFromCache(key) {
-  // Implement cache retrieval logic
-  // Example: const cachedData = localStorage.getItem(key);
-  // return cachedData ? JSON.parse(cachedData) : null;
-  return null; // Placeholder for demo
-}
-
-module.exports = fetchData;
+module.exports = { DataFetcher, fetchAndProcessData };
